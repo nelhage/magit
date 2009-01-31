@@ -168,8 +168,14 @@ Many Magit faces inherit from this one by default."
     (goto-char 1)
     (forward-line (1- line))))
 
+(defun magit-shell-command-to-string (command)
+  (with-output-to-string
+    (with-current-buffer
+        standard-output
+      (process-file shell-file-name nil t nil shell-command-switch command))))
+
 (defun magit-shell (cmd &rest args)
-  (let ((str (shell-command-to-string
+  (let ((str (magit-shell-command-to-string
 	      (apply 'format cmd (mapcar #'magit-escape-for-shell args)))))
     (if (string= str "")
 	nil
@@ -188,7 +194,7 @@ Many Magit faces inherit from this one by default."
 	(nreverse lines)))))
 
 (defun magit-shell-exit-code (cmd &rest args)
-  (call-process shell-file-name nil nil nil
+  (process-file shell-file-name nil nil nil
 		shell-command-switch
 		(apply 'format cmd (mapcar #'magit-escape-for-shell args))))
 
@@ -216,8 +222,7 @@ Many Magit faces inherit from this one by default."
 (defun magit-get-top-dir (cwd)
   (let* ((cwd (expand-file-name cwd))
 	 (magit-dir (magit-shell
-		     "cd %s && git rev-parse --git-dir 2>/dev/null"
-		     cwd)))
+		     "git rev-parse --git-dir 2>/dev/null")))
     (if magit-dir
 	(file-name-as-directory (or (file-name-directory magit-dir) cwd))
       nil)))
@@ -506,7 +511,7 @@ Many Magit faces inherit from this one by default."
 		(insert (propertize buffer-title 'face 'magit-section-title)
 			"\n"))
 	    (setq body-beg (point))
-	    (apply 'call-process cmd nil t nil args)
+	    (apply 'process-file cmd nil t nil args)
 	    (if washer
 		(save-restriction
 		  (narrow-to-region body-beg (point))
@@ -815,7 +820,7 @@ Many Magit faces inherit from this one by default."
 	     (magit-need-refresh magit-process-client-buffer))
 	    (t
 	     (setq successp
-		   (equal (apply 'call-process cmd nil buf nil args) 0))
+		   (equal (apply 'process-file cmd nil buf nil args) 0))
 	     (magit-set-mode-line-process nil)
 	     (magit-need-refresh magit-process-client-buffer))))
     (or successp
@@ -1580,6 +1585,7 @@ in log buffer."
   (if magit-save-some-buffers
       (save-some-buffers (eq magit-save-some-buffers 'dontask)))
   (let* ((topdir (magit-get-top-dir dir))
+         (default-directory topdir)
 	 (buf (or (magit-find-buffer 'status topdir)
 		  (switch-to-buffer
 		   (generate-new-buffer
