@@ -222,11 +222,11 @@ Many Magit faces inherit from this one by default."
 
 (defun magit-get-top-dir (cwd)
   (let* ((cwd (expand-file-name cwd))
-	 (magit-dir (magit-shell
-		     "git rev-parse --git-dir 2>/dev/null")))
+         (magit-dir (magit-shell
+                     "git rev-parse --git-dir 2>/dev/null")))
     (if magit-dir
-	(file-name-as-directory (or (file-name-directory magit-dir) cwd))
-      nil)))
+        (file-name-as-directory (or (file-name-directory magit-dir) cwd))
+      cwd)))
 
 (defun magit-get-ref (ref)
   (magit-shell "git symbolic-ref -q %s" ref))
