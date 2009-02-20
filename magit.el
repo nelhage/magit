@@ -1950,7 +1950,10 @@ in log buffer."
   (magit-run-git-async "svn" "dcommit"))
 
 (defun magit-svn-enabled ()
-  (not (null (find "git-svn" (magit-list-interesting-revisions) :test 'equal))))
+  (or (not (null (find "git-svn" (magit-list-interesting-revisions)
+		       :test 'equal)))
+      (not (null (find "trunk" (magit-list-interesting-revisions)
+		       :test 'equal)))))
 
 ;;; Resetting
 
@@ -2091,9 +2094,9 @@ in log buffer."
 
 (defun magit-remote-update ()
   (interactive)
-  (magit-run-git-async "remote" "update")
   (if (magit-svn-enabled)
-      (magit-run-git-async "svn" "fetch")))
+      (magit-run-git-async "svn" "fetch")
+    (magit-run-git-async "remote" "update")))
 
 (defun magit-pull ()
   (interactive)
