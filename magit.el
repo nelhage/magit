@@ -95,6 +95,11 @@ ask each time, while setting it to t will skip the question."
 		 (const :tag "Immediately" 0)
 		 (integer :tag "After this many seconds")))
 
+(defcustom magit-log-edit-confirm-cancellation nil
+  "Require acknowledgement before cancelling the log edit buffer."
+  :group 'magit
+  :type 'boolean)
+  
 (defface magit-header
   '((t))
   "Face for generic header lines.
@@ -2134,6 +2139,7 @@ in log buffer."
     (define-key map (kbd "C-c C-a") 'magit-log-edit-toggle-amending)
     (define-key map (kbd "M-p") 'log-edit-previous-comment)
     (define-key map (kbd "M-n") 'log-edit-next-comment)
+    (define-key map (kbd "C-c C-k") 'magit-log-edit-cancel-log-message)
     map))
 
 (defvar magit-pre-log-edit-window-configuration nil)
@@ -2273,6 +2279,17 @@ Prefix arg means justify as well."
       (set-window-configuration magit-pre-log-edit-window-configuration)
       (setq magit-pre-log-edit-window-configuration nil))))
 
+(defun magit-log-edit-cancel-log-message ()
+  (interactive)
+  (when (or (not magit-log-edit-confirm-cancellation)
+	    (yes-or-no-p 
+	     "Really cancel editing the log (any changes will be lost)?"))
+    (erase-buffer)
+    (bury-buffer)
+    (when magit-pre-log-edit-window-configuration
+      (set-window-configuration magit-pre-log-edit-window-configuration)
+      (setq magit-pre-log-edit-window-configuration nil))))
+
 (defun magit-log-edit-toggle-amending ()
   (interactive)
   (let* ((fields (magit-log-edit-get-fields))
@@ -2292,7 +2309,7 @@ Prefix arg means justify as well."
     (pop-to-buffer buf)
     (setq default-directory dir)
     (magit-log-edit-mode)
-    (message "Type C-c C-c to %s." operation)))
+    (message "Type C-c C-c to %s (C-c C-k to cancel)." operation)))
 
 (defun magit-log-edit ()
   (interactive)
