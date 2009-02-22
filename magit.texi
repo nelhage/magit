@@ -10,7 +10,7 @@
 @end direntry
 
 @copying
-Copyright @copyright{} 2008 Marius Vollmer
+Copyright @copyright{} 2008, 2009 Marius Vollmer
 
 @quotation
 Permission is granted to copy, distribute and/or modify this document
@@ -30,6 +30,7 @@ as an extension to Emacs.
 @menu
 * Introduction::                
 * Acknowledgments::             
+* Sections::                    
 * Status::                      
 * Untracked files::             
 * Staging and Committing::      
@@ -40,6 +41,7 @@ as an extension to Emacs.
 * Resetting::                   
 * Stashing::                    
 * Branching::                   
+* Wazzup::                      
 * Merging::                     
 * Rebasing::                    
 * Rewriting::                   
@@ -81,9 +83,12 @@ recent command.  You can switch to it with @kbd{$}.
 @node Acknowledgments
 @chapter Acknowledgments
 
-From day one of the first Magit announcement, John Wiegley, Linh Dang,
-and Christian Neukirchen have contributed fixes, UI improvements, and
-new features.  Thanks!
+From day one of the first Magit announcement, John Wiegley has
+contributed numerous fixes, UI improvements, and new features.
+Thanks!
+
+Linh Dang and Christian Neukirchen also contributed from day one.
+Thanks!
 
 Phil Hagelberg joined a few days later.  Thanks!
 
@@ -92,12 +97,74 @@ Alex Ott contributed support for git svn.  Thanks!
 Marcin Bachry contributed bug fixes and support for decorated logs.
 Thanks!
 
+Alexey Voinov fixed bugs.  Thanks!
+
+@node Sections
+@chapter Sections
+
+All Magit buffers are structured into nested 'sections'.  These
+sections can be hidden and shown individually.  When a section is
+hidden, only its first line is shown and all its children are
+completely invisible.
+
+The most fine-grained way to control the visibility of sections is the
+@kbd{TAB} key.  It will to toggle the current section (the section
+that contains point) between being hidden and being shown.
+
+Typing @kbd{S-TAB} toggles the visibility of the children of the
+current section.  When all of them are shown, they will all be hidden.
+Otherwise, when some or all are hidden, they will all be shown.
+
+The digit keys @kbd{1}, @kbd{2}, @kbd{3}, and @kbd{4} control the
+visibility of sections based on levels.  Hitting @kbd{2}, for example,
+will show sections on levels one and two, and will hide sections on
+level 3.  However, only sections that are a parent or child of the
+current section are affected.
+
+For example, when the current section is on level 3 and you hit
+@kbd{1}, the grand-parent of the current section (which is on level
+one) will be shown, and the parent of the current section (level 2)
+will be hidden.  The visibility of no other section will be changed.
+
+This sounds a bit complicated, but you'll figure it out.
+
+Using @kbd{M-1}, @kbd{M-2}, @kbd{M-3}, and @kbd{M-4} is similar to the
+unmodified digits, but now all sections on the respective level are
+affected, regardless of whether or not they are related to the current
+section.
+
+For example, @kbd{M-1} will only show the first lines of the top-level
+sections and will hide everything else.  Typing @kbd{M-4} on the other
+hand will show everything.
+
+Because of the way the status buffer is set up, some changes to
+section visibility are more common than others.  Files are on level 2
+and diff hunks are on level 4.  Thus, you can type @kbd{2} to collapse
+the diff of the current file, and @kbd{M-2} to collapse all files.
+This returns the status buffer to its default setup and is a quick way
+to unclutter it after drilling down into the modified files.
+
+Because @kbd{2} and @kbd{M-2} are so common, they are bound to
+additional, more mnemonic keys: @kbd{M-h} (hide) and @kbd{M-H} (hide
+all).
+
+Likewise @kbd{4} and @kbd{M-4} are also available as @kbd{M-s} (show)
+and @kbd{M-S} (show all).
+
 @node Status
 @chapter Status
 
 Running @kbd{M-x magit-status} displays the main interface of Magit,
 the status buffer.  You can have multiple status buffers active at the
 same time, each associated with its own Git repository.
+
+When invoking @kbd{M-x magit-status} from within a Git repository, it
+will switch to the status buffer of that repository.  Otherwise, it
+will prompt for a directory.  With a prefix argument, it will always
+prompt.
+
+If you specify a directory that is not a Git repository, @kbd{M-x
+magit-status} will ask whether to create one.
 
 You need to explicitly refresh the status buffer when you have made
 changes to the repository from outside of Emacs.  You can type @kbd{g}
@@ -108,17 +175,8 @@ the status buffer in this way after saving a file in Emacs.
 The header at the top of the status buffer shows a short summary of
 the repository state: where it is located, which branch is checked
 out, etc.  Below the header are a number of sections that show details
-about the working tree and the staging area.  Only sections that are
-not empty are shown.
-
-You control how much of a section is visible by moving point to its
-title and hitting @kbd{TAB} or @kbd{S-TAB}.  Hitting @kbd{TAB} will
-toggle between hiding and showing the section.  A hidden section only
-shows its first line.  You can also control the visibility of
-sub-sections in this way.  Hitting @kbd{S-TAB} will fully expand a
-section by showing it and all of its sub-sections.  If a section is
-already fully expanded, @kbd{S-TAB} will collapse it: the section
-itself remains shown, but all its immediate sub-sections are hidden.
+about the working tree and the staging area.  You can hide and show
+them as described in the previous section.
 
 The first section shows @emph{Untracked files}, if there are any.  See
 @ref{Untracked files} for more details.
@@ -134,13 +192,6 @@ During a history rewriting session, the status buffer shows the
 @emph{Pending changes} and @emph{Pending commits} sections.  See
 @ref{Rewriting} for more details.
 
-Typing a digit in the status buffer will move point to a section
-header: @kbd{1} will move to @emph{Untracked files}, @kbd{2} will move
-to @emph{Unstaged changes} or @emph{Changes}, @kbd{3} will move to
-@emph{Staged changes}, and @kbd{4} will move to @emph{Unpushed
-commits}.  Note that these relations are fixed, @kbd{3} always moves
-to @emph{Unstaged changes}, not the third visible section.
-
 @node Untracked files
 @chapter Untracked files
 
@@ -154,7 +205,9 @@ ask you for the name of the file to ignore.  This is useful to ignore
 whole directories, for example.  The @kbd{I} command is similar to
 @kbd{i} but will add the file to @code{.git/info/exclude} instead.
 
-To delete a untracked file forever, use @kbd{k}.
+To delete a untracked file forever, use @kbd{k}.  If point is one the
+@emph{Untracked files} section title when you it @kbd{k}, all
+untracked files are deleted.
 
 @node Staging and Committing
 @chapter Staging and Committing
@@ -197,14 +250,14 @@ changes.
 
 Type @kbd{c} to pop up a buffer where you can write your change
 description.  Once you are happy with the description, type @kbd{C-c
-C-c} in that buffer to perform the commit.  When your stagin area is
-unused at this point, all your uncommitted changes are committed.
-When the staging area is in use, only the staged changes are
-committed.
+C-c} in that buffer to perform the commit.  When your staging area is
+unused when you hit @kbd{c}, you will be asked whether to commit all
+the unchanged changes.  When the staging area is in use, only the
+staged changes are committed, of course.
 
 You can type @kbd{C-c C-a} in the buffer with the change description
-toggles a flag that determines whether the next commit will be a
-@emph{amending} one.
+to toggle a flag that determines whether the next commit will
+@emph{amending} the current commit in HEAD.
 
 Typing @kbd{C} will also pop up the change description buffer, but in
 addition, it will try to insert a ChangeLog-style entry for the change
@@ -218,9 +271,12 @@ new buffer will be shown that displays the history in a terse form.
 The first paragraph of each commit message is displayed, next to a
 representation of the relationships between commits.
 
-Typing @kbd{L} will ask for the starting and end point of the history.
-This can be used to show the commits that are in one branch, but not
-in another, for example.
+Giving a prefix argument to @kbd{l} will ask for the starting and end
+point of the history.  This can be used to show the commits that are
+in one branch, but not in another, for example.
+
+Typing @kbd{L} (or @kbd{C-u L}) will show the log in a more verbose
+form.
 
 You can move point to a commit and then cause various things to happen
 with it.  (The following commands work in any list of commit, such as
@@ -229,7 +285,7 @@ the one shown in the @emph{Unpushed commits} section.)
 Typing @kbd{RET} will pop up more information about the current commit
 and move point into the new buffer.  Typing @kbd{SPC} and @kbd{DEL}
 will also show the information, but will scroll the new buffer up or
-down when typed again.
+down (respectively) when typed again.
 
 Typing @kbd{a} will apply the current commit to your current branch.
 This is useful when you are browsing the history of some other branch
@@ -255,7 +311,7 @@ the @dfn{marked} commit.
 
 You can mark the current commit by typing @kbd{.}.  When the current
 commit is already marked, typing @kbd{.} will unmark it.  To unmark
-the marked commit no matter where point it, use @kbd{C-u .}.
+the marked commit no matter where point is, use @kbd{C-u .}.
 
 Some commands, such as @kbd{=}, will use the current commit and the
 marked commit as implicit arguments.  Other commands will offer the
@@ -332,6 +388,10 @@ You can create a new stash with @kbd{z}.  Your stashes will be listed
 in the status buffer, and you can apply them with @kbd{a} and pop them
 with @kbd{A}.  To drop a stash, use @kbd{k}.
 
+You can visit and show stashes in the usual way: Typing @kbd{SPC} and
+@kbd{DEL} will pop up a buffer with the description of the stash and
+scroll it, typing @kbd{RET} will move point into that buffer.
+
 @node Branching
 @chapter Branching
 
@@ -345,6 +405,20 @@ description will offer that commit as the default to switch to.
 This will result in a detached head.
 
 To create a new branch and switch to it immediately, type @kbd{B}.
+
+@node Wazzup
+@chapter Wazzup
+
+Typing @kbd{w} will show a summary of how your other branches relate
+to the current branch.
+
+For each branch, you will get a section that lists the commits in that
+branch that are not in the current branch.  The sections are initially
+collapsed; you need to explicitly open them with @kbd{TAB} (or
+similar) to show the lists of commits.
+
+When point is on a @emph{N unmerged commits in ...} title, the
+corresponding branch will be offered as the default for a merge.
 
 @node Merging
 @chapter Merging
