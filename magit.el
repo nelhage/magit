@@ -203,7 +203,7 @@ Many Magit faces inherit from this one by default."
     (forward-line (1- line))))
 
 (defun magit-format-shell-command (fmt args)
-  (apply 'format fmt (mapcar #'magit-escape-for-shell args)))x
+  (apply 'format fmt (mapcar #'magit-escape-for-shell args)))
 
 (defun magit-format-git-command (fmt args)
   (concat (magit-concat-with-delim
