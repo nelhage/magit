@@ -226,7 +226,7 @@ Many Magit faces inherit from this one by default."
                      "git rev-parse --git-dir 2>/dev/null")))
     (if magit-dir
         (file-name-as-directory (or (file-name-directory magit-dir) cwd))
-      cwd)))
+      nil)))
 
 (defun magit-get-ref (ref)
   (magit-shell "git symbolic-ref -q %s" ref))
@@ -241,7 +241,7 @@ Many Magit faces inherit from this one by default."
 (defun magit-read-top-dir ()
   (magit-get-top-dir
    (read-directory-name "Git repository: "
-			(magit-get-top-dir default-directory))))
+			(or (magit-get-top-dir default-directory) default-directory))))
 
 (defun magit-name-rev (rev)
   (and rev
