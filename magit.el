@@ -1938,9 +1938,12 @@ in log buffer."
   (interactive (magit-read-create-branch-args))
   (if (and branch (not (string= branch ""))
 	   parent)
-      (magit-run-git "checkout" "-b"
-		     branch
-		     (magit-rev-to-git parent))))
+      (if (file-exists-p ".topdeps")
+	  (magit-run* (list magit-topgit-executable "create"
+			    branch (magit-rev-to-git parent))
+		      nil nil nil t)
+	(magit-run-git "checkout" "-b"
+		       branch (magit-rev-to-git parent)))))
 
 ;;; Merging
 
