@@ -66,6 +66,11 @@
   :group 'magit
   :type 'string)
 
+(defcustom magit-topgit-executable "tg"
+  "The name of the TopGit executable."
+  :group 'magit
+  :type 'string)
+
 (defcustom magit-git-standard-options '("--no-pager")
   "Standard options when running Git."
   :group 'magit
@@ -2150,7 +2155,10 @@ in log buffer."
 
 (defun magit-pull ()
   (interactive)
-  (magit-run-git-async "pull" "-v"))
+  (if (file-exists-p ".topdeps")
+      (magit-run* (list magit-topgit-executable "update")
+		  nil nil nil t)
+    (magit-run-git-async "pull" "-v")))
 
 (defun magit-shell-command (command)
   (interactive "sCommand: ")
@@ -2830,7 +2838,11 @@ Prefix arg means justify as well."
      (error "Can't discard this diff"))
     ((stash)
      (when (yes-or-no-p "Discard stash? ")
-       (magit-run-git "stash" "drop" info)))))
+       (magit-run-git "stash" "drop" info)))
+    ((topic)
+     (when (yes-or-no-p "Discard topic? ")
+       (magit-run* (list magit-topgit-executable "delete" "-f" info)
+		   nil nil nil t)))))
 
 (defun magit-visit-item ()
   (interactive)
