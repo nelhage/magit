@@ -36,12 +36,18 @@
 
 ;;; TODO
 
-;; - Showing tags
-;; - Amending commits other than HEAD.
+;; For 0.7:
+;;
+;; - Make it possible to ignore commits etc for Wazzup.
+;;
+;; Later:
+;;
+;; - Good email integration.
+;; - Showing tags.
 ;; - Visiting from staged hunks doesn't always work since the line
 ;;   numbers don't refer to the working tree.  Fix that somehow.
 ;; - Get current defun from removed lines in a diff
-;; - Equivalent of git-wtf, http://git-wt-commit.rubyforge.org/#git-wtf
+;; - Amending commits other than HEAD.
 ;; - 'Subsetting', only looking at a subset of all files.
 
 (require 'cl)
@@ -60,6 +66,16 @@
   :group 'magit
   :type 'string)
 
+(defcustom magit-topgit-executable "tg"
+  "The name of the TopGit executable."
+  :group 'magit
+  :type 'string)
+
+(defcustom magit-git-standard-options '("--no-pager")
+  "Standard options when running Git."
+  :group 'magit
+  :type '(repeat string))
+
 (defcustom magit-save-some-buffers t
   "Non-nil means that \\[magit-status] will save modified buffers before running.
 Setting this to t will ask which buffers to save, setting it to 'dontask will
@@ -70,13 +86,13 @@ save all modified buffers without asking."
 		 (const :tag "Save without asking" dontask)))
 
 (defcustom magit-commit-all-when-nothing-staged 'ask
-  "Non-nil means that \\[magit-log-edit] will commit all unstaged
-changes when there are no staged changes.  Setting this to 'ask will
-ask each time, while setting it to t will skip the question."
+  "Determines what \\[magit-log-edit] does when nothing is staged.
+Setting this to nil will make it do nothing, setting it to t will arrange things so that the actual commit command will use the \"--all\" option, setting it to 'ask will first ask for confirmation whether to do this, and setting it to 'ask-stage will cause all changes to be staged, after a confirmation."
   :group 'magit
   :type '(choice (const :tag "No" nil)
 		 (const :tag "Always" t)
-		 (const :tag "Ask" ask)))
+		 (const :tag "Ask" ask)
+		 (const :tag "Ask to stage everything" ask-stage)))
 
 (defcustom magit-commit-signoff nil
   "When performing git commit adds --signoff"
@@ -180,8 +196,6 @@ Many Magit faces inherit from this one by default."
   "Face for branch head labels shown in log buffer."
   :group 'magit)
 
-(defconst magit-git-standard-options '("--no-pager"))
-
 ;;; Macros
 
 (defmacro magit-with-refresh (&rest body)
@@ -215,7 +229,7 @@ Many Magit faces inherit from this one by default."
 	  (magit-format-shell-command fmt args)))
 
 (defun magit-shell-lines (command)
-  (let ((str (shell-command-to-string command)))
+  (let ((str (magit-shell-command-to-string command)))
     (if (string= str "")
 	nil
       (let ((lines (nreverse (split-string str "\n"))))
@@ -249,9 +263,13 @@ Many Magit faces inherit from this one by default."
 		(magit-format-git-command fmt args)))
 
 (defun magit-file-lines (file)
-  (if (file-exists-p file)
-      (magit-shell-lines (magit-format-shell-command "cat %s" (list file)))
-    nil))
+  (when (file-exists-p file)
+    (with-temp-buffer
+      (insert-file-contents file)
+      (let ((rev (nreverse (split-string (buffer-string) "\n"))))
+	(nreverse (if (equal (car rev) "")
+		      (cdr rev)
+		    rev))))))
 
 (defun magit-concat-with-delim (delim seqs)
   (cond ((null seqs)
@@ -605,10 +623,13 @@ Many Magit faces inherit from this one by default."
 	  (goto-char (magit-section-beginning next))
 	  (if (memq magit-submode '(log reflog))
 	      (magit-show-commit next))
-	  (let ((offset (- (line-number-at-pos (magit-section-beginning next))
-			   (line-number-at-pos (magit-section-end next)))))
-	    (if (< offset (window-height))
-		(recenter offset))))
+	  (if (not (magit-section-hidden next))
+	      (let ((offset (- (line-number-at-pos
+				(magit-section-beginning next))
+			       (line-number-at-pos
+				(magit-section-end next)))))
+		(if (< offset (window-height))
+		    (recenter offset)))))
       (message "No next section"))))
 
 (defun magit-prev-section (section)
@@ -1035,6 +1056,7 @@ Many Magit faces inherit from this one by default."
 (magit-define-section-jumper unstaged  "Unstaged changes")
 (magit-define-section-jumper staged    "Staged changes")
 (magit-define-section-jumper unpushed  "Unpushed commits")
+(magit-define-section-jumper svn-unpushed  "Unpushed commits (SVN)")
 
 (magit-define-level-shower 1)
 (magit-define-level-shower 2)
@@ -1087,6 +1109,7 @@ Many Magit faces inherit from this one by default."
     (define-key map (kbd "x") 'magit-reset-head)
     (define-key map (kbd "X") 'magit-reset-working-tree)
     (define-key map (kbd "k") 'magit-discard-item)
+    (define-key map (kbd "!") 'magit-shell-command)
     (define-key map (kbd "RET") 'magit-visit-item)
     (define-key map (kbd "SPC") 'magit-show-item-or-scroll-up)
     (define-key map (kbd "DEL") 'magit-show-item-or-scroll-down)
@@ -1388,7 +1411,7 @@ Please see the manual for a complete description of Magit.
   (magit-refresh))
 
 (defun magit-diff-line-file ()
-  (cond ((looking-at "^diff --git a/\\(.*\\) b/\\(.*\\)$")
+  (cond ((looking-at "^diff --git ./\\(.*\\) ./\\(.*\\)$")
 	 (match-string-no-properties 2))
 	((looking-at "^diff --cc +\\(.*\\)$")
 	 (match-string-no-properties 1))
@@ -1750,6 +1773,18 @@ in log buffer."
 		     "log" "--pretty=format:* %H %s"
 		     (format "%s/%s..HEAD" remote branch)))
 
+(defun magit-insert-unpulled-svn-commits ()
+  (magit-git-section 'svn-unpulled
+		     "Unpulled commits (SVN):" 'magit-wash-log
+		     "log" "--pretty=format:* %H %s"
+		     (format "HEAD..remotes/trunk")))
+
+(defun magit-insert-unpushed-svn-commits ()
+  (magit-git-section 'svn-unpushed
+		     "Unpushed commits (SVN):" 'magit-wash-log
+		     "log" "--pretty=format:* %H %s"
+		     (format "remotes/trunk..HEAD")))
+
 ;;; Status
 
 (defun magit-refresh-status ()
@@ -1757,6 +1792,7 @@ in log buffer."
     (magit-with-section 'status nil
       (let* ((branch (magit-get-current-branch))
 	     (remote (and branch (magit-get "branch" branch "remote")))
+             (svn-enabled (magit-svn-enabled))
 	     (head (magit-git-string
 		    "log --max-count=1 --abbrev-commit --pretty=oneline"))
 	     (no-commit (string-match "fatal: bad default revision" head)))
@@ -1781,17 +1817,22 @@ in log buffer."
 	(insert "\n")
 	(magit-insert-untracked-files)
 	(magit-insert-stashes)
+	(magit-insert-topics)
 	(magit-insert-pending-changes)
 	(magit-insert-pending-commits)
 	(when remote
 	  (magit-insert-unpulled-commits remote branch))
+        (when svn-enabled
+          (magit-insert-unpulled-svn-commits))
 	(let ((staged (or no-commit (magit-anything-staged-p))))
 	  (magit-insert-unstaged-changes
 	   (if staged "Unstaged changes:" "Changes:"))
 	  (if staged
 	      (magit-insert-staged-changes no-commit)))
 	(when remote
-	  (magit-insert-unpushed-commits remote branch))))))
+	  (magit-insert-unpushed-commits remote branch))
+        (when svn-enabled
+          (magit-insert-unpushed-svn-commits))))))
 
 (defun magit-init (dir)
   "Initialize git repository in specified directory"
@@ -1895,9 +1936,12 @@ in log buffer."
   (interactive (magit-read-create-branch-args))
   (if (and branch (not (string= branch ""))
 	   parent)
-      (magit-run-git "checkout" "-b"
-		     branch
-		     (magit-rev-to-git parent))))
+      (if (file-exists-p ".topdeps")
+	  (magit-run* (list magit-topgit-executable "create"
+			    branch (magit-rev-to-git parent))
+		      nil nil nil t)
+	(magit-run-git "checkout" "-b"
+		       branch (magit-rev-to-git parent)))))
 
 ;;; Merging
 
@@ -1961,20 +2005,21 @@ in log buffer."
   (magit-run-git-async "svn" "dcommit"))
 
 (defun magit-svn-enabled ()
-  (or (not (null (find "git-svn" (magit-list-interesting-revisions)
-		       :test 'equal)))
-      (not (null (find "trunk" (magit-list-interesting-revisions)
-		       :test 'equal)))))
+  (not (null (find "trunk" (magit-list-interesting-revisions)
+		   :test 'equal))))
 
 ;;; Resetting
 
-(defun magit-reset-head (rev)
-  (interactive (list (magit-read-rev "Reset head to"
+(defun magit-reset-head (rev &optional hard)
+  (interactive (list (magit-read-rev (format "%s head to"
+					     (if current-prefix-arg
+						 "Hard reset"
+					       "Reset"))
 				     (or (magit-default-rev)
-					 "HEAD^"))))
+					 "HEAD^"))
+		     current-prefix-arg))
   (if rev
-      (magit-run-git "reset" (if current-prefix-arg
-				 "--hard" "--soft")
+      (magit-run-git "reset" (if hard "--hard" "--soft")
 		     (magit-rev-to-git rev))))
 
 (defun magit-reset-working-tree ()
@@ -2113,7 +2158,19 @@ in log buffer."
 
 (defun magit-pull ()
   (interactive)
-  (magit-run-git-async "pull" "-v"))
+  (if (file-exists-p ".topdeps")
+      (magit-run* (list magit-topgit-executable "update")
+		  nil nil nil t)
+    (magit-run-git-async "pull" "-v")))
+
+(defun magit-shell-command (command)
+  (interactive "sCommand: ")
+  (require 'pcomplete)
+  (let ((args (car (with-temp-buffer
+		     (insert command)
+		     (pcomplete-parse-buffer-arguments))))
+	(magit-process-popup-time 0))
+    (magit-run* args nil nil nil t)))
 
 (defun magit-read-remote (prompt def)
   (completing-read (if def
@@ -2281,6 +2338,19 @@ Prefix arg means justify as well."
 				  '("--signoff") '())))))))
     (erase-buffer)
     (bury-buffer)
+    (when (file-exists-p ".git/MERGE_MSG")
+      (delete-file ".git/MERGE_MSG"))
+    (when magit-pre-log-edit-window-configuration
+      (set-window-configuration magit-pre-log-edit-window-configuration)
+      (setq magit-pre-log-edit-window-configuration nil))))
+
+(defun magit-log-edit-cancel-log-message ()
+  (interactive)
+  (when (or (not magit-log-edit-confirm-cancellation)
+	    (yes-or-no-p 
+	     "Really cancel editing the log (any changes will be lost)?"))
+    (erase-buffer)
+    (bury-buffer)
     (when magit-pre-log-edit-window-configuration
       (set-window-configuration magit-pre-log-edit-window-configuration)
       (setq magit-pre-log-edit-window-configuration nil))))
@@ -2313,6 +2383,8 @@ Prefix arg means justify as well."
     (setq magit-pre-log-edit-window-configuration
 	  (current-window-configuration))
     (pop-to-buffer buf)
+    (when (file-exists-p ".git/MERGE_MSG")
+      (insert-file-contents ".git/MERGE_MSG"))
     (setq default-directory dir)
     (magit-log-edit-mode)
     (message "Type C-c C-c to %s (C-c C-k to cancel)." operation)))
@@ -2321,13 +2393,17 @@ Prefix arg means justify as well."
   (interactive)
   (magit-log-edit-set-field 'tag nil)
   (when (and magit-commit-all-when-nothing-staged
-	     (not (magit-anything-staged-p))
-	     (not (magit-log-edit-get-field 'commit-all)))
-    (magit-log-edit-set-field
-     'commit-all
-     (if (or (eq magit-commit-all-when-nothing-staged t)
-	     (y-or-n-p "Nothing staged. Commit all unstaged changes? "))
-	 "yes" "no")))
+	     (not (magit-anything-staged-p)))
+    (cond ((eq magit-commit-all-when-nothing-staged 'ask-stage)
+	   (if (and (not (magit-everything-clean-p))
+		    (y-or-n-p "Nothing staged. Stage everything now? "))
+	       (magit-stage-all)))
+	  ((not (magit-log-edit-get-field 'commit-all))
+	   (magit-log-edit-set-field
+	    'commit-all
+	    (if (or (eq magit-commit-all-when-nothing-staged t)
+		    (y-or-n-p "Nothing staged. Commit all unstaged changes? "))
+		"yes" "no")))))
   (magit-pop-to-log-edit "commit"))
 
 (defun magit-add-log ()
@@ -2451,6 +2527,32 @@ Prefix arg means justify as well."
 		    (args (magit-rev-range-to-git range)))
 	       (magit-mode-init dir 'diff #'magit-refresh-diff-buffer
 				range args)))))))
+
+;;; Topic branches (using topgit)
+
+(defun magit-wash-topic ()
+  (if (search-forward-regexp "^..\\(t/\\S-+\\)\\s-+\\(\\S-+\\)\\s-+\\(\\S-+\\)"
+			     (line-end-position) t)
+      (let ((topic (match-string 1)))
+	(delete-region (match-beginning 2) (match-end 2))
+	(goto-char (line-beginning-position))
+	(delete-char 4)
+	(insert "\t")
+	(goto-char (line-beginning-position))
+	(magit-with-section topic 'topic
+	  (magit-set-section-info topic)
+	  (forward-line)))
+    (delete-region (line-beginning-position) (1+ (line-end-position))))
+  t)
+
+(defun magit-wash-topics ()
+  (let ((magit-old-top-section nil))
+    (magit-wash-sequence #'magit-wash-topic)))
+
+(defun magit-insert-topics ()
+  (magit-git-section 'topics
+		     "Topics:" 'magit-wash-topics
+		     "branch" "-v"))
 
 ;;; Commits
 
@@ -2633,12 +2735,23 @@ Prefix arg means justify as well."
 
 ;;; Wazzup
 
-(defun magit-refresh-wazzup-buffer (head)
+(defun magit-wazzup-ignore (branch edit)
+  (let ((ignore-file ".git/info/wazzup-exclude"))
+    (if edit
+	(setq branch (read-string "Branch to ignore for wazzup: " branch)))
+    (append-to-file (concat branch "\n") nil ignore-file)
+    (magit-need-refresh)))
+
+(defun magit-refresh-wazzup-buffer (head all)
   (magit-create-buffer-sections
     (magit-with-section 'wazzupbuf nil
       (insert (format "Wazzup, %s\n\n" head))
-      (let ((branches (magit-git-lines "branch -a | cut -c3-"))
-	    (reported (make-hash-table :test #'equal)))
+      (let* ((excluded (magit-file-lines ".git/info/wazzup-exclude"))
+	     (all-branches (magit-git-lines "branch -a | cut -c3-"))
+	     (branches (if all all-branches
+			 (remove-if (lambda (b) (member b excluded))
+				    all-branches)))
+	     (reported (make-hash-table :test #'equal)))
 	(dolist (b branches)
 	  (let* ((hash (magit-git-string "rev-parse %s" b))
 		 (reported-branch (gethash hash reported)))
@@ -2653,8 +2766,11 @@ Prefix arg means justify as well."
 		      (let ((magit-section-hidden-default t))
 			(magit-git-section 
 			 (cons b 'wazzup)
-			 (format "%s unmerged commits in %s"
-				 n b)
+			 (format "%s unmerged commits in %s%s"
+				 n b
+				 (if (member b excluded)
+				     " (normally ignored)"
+				   ""))
 			 'magit-wash-log
 			 "log"
 			 (format "--max-count=%s" magit-log-cutoff-length)
@@ -2663,13 +2779,13 @@ Prefix arg means justify as well."
 			 "--"))))
 		(magit-set-section-info b section)))))))))
 
-(defun magit-wazzup ()
-  (interactive)
+(defun magit-wazzup (&optional all)
+  (interactive "P")
   (let* ((topdir (magit-get-top-dir default-directory)))
     (switch-to-buffer "*magit-wazzup*")
     (magit-mode-init topdir 'wazzup 
 		     #'magit-refresh-wazzup-buffer
-		     (magit-get-current-branch))))
+		     (magit-get-current-branch) all)))
 
 ;;; Miscellaneous
 
@@ -2686,7 +2802,7 @@ Prefix arg means justify as well."
     ((untracked file)
      (magit-ignore-file info current-prefix-arg nil))
     ((wazzup)
-     (message "wazzup"))))
+     (magit-wazzup-ignore info current-prefix-arg))))
 
 (defun magit-ignore-item-locally ()
   (interactive)
@@ -2740,7 +2856,11 @@ Prefix arg means justify as well."
      (error "Can't discard this diff"))
     ((stash)
      (when (yes-or-no-p "Discard stash? ")
-       (magit-run-git "stash" "drop" info)))))
+       (magit-run-git "stash" "drop" info)))
+    ((topic)
+     (when (yes-or-no-p "Discard topic? ")
+       (magit-run* (list magit-topgit-executable "delete" "-f" info)
+		   nil nil nil t)))))
 
 (defun magit-visit-item ()
   (interactive)
@@ -2759,7 +2879,9 @@ Prefix arg means justify as well."
      (pop-to-buffer "*magit-commit*"))
     ((stash)
      (magit-show-stash info)
-     (pop-to-buffer "*magit-diff*"))))
+     (pop-to-buffer "*magit-diff*"))
+    ((topic)
+     (magit-checkout info))))
 
 (defun magit-show-item-or-scroll-up ()
   (interactive)
