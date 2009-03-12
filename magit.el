@@ -36,12 +36,7 @@
 
 ;;; TODO
 
-;; For 0.7:
-;;
-;; - Make it possible to ignore commits etc for Wazzup.
-;;
-;; Later:
-;;
+;; - Queuing of asynchronous commands.
 ;; - Good email integration.
 ;; - Showing tags.
 ;; - Visiting from staged hunks doesn't always work since the line
@@ -115,7 +110,7 @@ Setting this to nil will make it do nothing, setting it to t will arrange things
   "Require acknowledgement before cancelling the log edit buffer."
   :group 'magit
   :type 'boolean)
-  
+
 (defface magit-header
   '((t))
   "Face for generic header lines.
@@ -270,6 +265,12 @@ Many Magit faces inherit from this one by default."
 	(nreverse (if (equal (car rev) "")
 		      (cdr rev)
 		    rev))))))
+
+(defun magit-write-file-lines (file lines)
+  (with-temp-buffer
+    (dolist (l lines)
+      (insert l "\n"))
+    (write-file file)))
 
 (defun magit-concat-with-delim (delim seqs)
   (cond ((null seqs)
@@ -427,7 +428,7 @@ Many Magit faces inherit from this one by default."
   (if (stringp range)
       (format "%s in %s" things range)
     (if (cdr range)
-	(format "%s from %s to %s" things 
+	(format "%s from %s to %s" things
 		(magit-rev-describe (car range))
 		(magit-rev-describe (cdr range)))
       (format "%s at %s" things (magit-rev-describe (car range))))))
@@ -617,7 +618,7 @@ Many Magit faces inherit from this one by default."
 						  (magit-section-children
 						   section)))
 		   (magit-next-section section))))
-    
+
     (if next
 	(progn
 	  (goto-char (magit-section-beginning next))
@@ -1013,7 +1014,7 @@ Many Magit faces inherit from this one by default."
 
 (defun magit-run-git (&rest args)
   (magit-with-refresh
-    (magit-run* (append (cons magit-git-executable 
+    (magit-run* (append (cons magit-git-executable
 			      magit-git-standard-options)
 			args))))
 
@@ -1023,7 +1024,7 @@ Many Magit faces inherit from this one by default."
 
 (defun magit-run-git-with-input (input &rest args)
   (magit-with-refresh
-    (magit-run* (append (cons magit-git-executable 
+    (magit-run* (append (cons magit-git-executable
 			    magit-git-standard-options)
 			args)
 		nil nil nil nil input)))
@@ -1035,7 +1036,7 @@ Many Magit faces inherit from this one by default."
 		  cmd))))
 
 (defun magit-run-git-async (&rest args)
-  (magit-run* (append (cons magit-git-executable 
+  (magit-run* (append (cons magit-git-executable
 			    magit-git-standard-options)
 		      args)
 	      nil nil nil t))
@@ -1090,7 +1091,6 @@ Many Magit faces inherit from this one by default."
     (define-key map (kbd "U") 'magit-unstage-all)
     (define-key map (kbd "i") 'magit-ignore-item)
     (define-key map (kbd "I") 'magit-ignore-item-locally)
-    (define-key map (kbd "i") 'magit-ignore-item)
     (define-key map (kbd "?") 'magit-describe-item)
     (define-key map (kbd ".") 'magit-mark-item)
     (define-key map (kbd "=") 'magit-diff-with-mark)
@@ -1118,6 +1118,7 @@ Many Magit faces inherit from this one by default."
     (define-key map (kbd "B") 'magit-create-branch)
     (define-key map (kbd "m") 'magit-manual-merge)
     (define-key map (kbd "M") 'magit-automatic-merge)
+    (define-key map (kbd "e") 'magit-interactive-resolve-item)
     (define-key map (kbd "N r") 'magit-svn-rebase)
     (define-key map (kbd "N c") 'magit-svn-dcommit)
     (define-key map (kbd "R") 'magit-rebase-step)
@@ -1181,6 +1182,7 @@ Many Magit faces inherit from this one by default."
     ["Create branch" magit-create-branch t]
     ["Merge" magit-automatic-merge t]
     ["Merge (no commit)" magit-manual-merge t]
+    ["Interactive resolve" magit-interactive-resolve-item t]
     ["Rebase" magit-rebase-step t]
     ("Git SVN"
      ["Rebase" magit-svn-rebase (magit-svn-enabled)]
@@ -1533,7 +1535,7 @@ Please see the manual for a complete description of Magit.
     diff))
 
 (defun magit-diff-item-insert-header (diff buf)
-  (let ((beg (save-excursion 
+  (let ((beg (save-excursion
 	       (goto-char (magit-section-beginning diff))
 	       (forward-line)
 	       (point)))
@@ -1543,7 +1545,7 @@ Please see the manual for a complete description of Magit.
     (magit-insert-region beg end buf)))
 
 (defun magit-insert-diff-item-patch (diff buf)
-  (let ((beg (save-excursion 
+  (let ((beg (save-excursion
 	       (goto-char (magit-section-beginning diff))
 	       (forward-line)
 	       (point)))
@@ -1777,13 +1779,13 @@ in log buffer."
   (magit-git-section 'svn-unpulled
 		     "Unpulled commits (SVN):" 'magit-wash-log
 		     "log" "--pretty=format:* %H %s"
-		     (format "HEAD..remotes/trunk")))
+		     (format "HEAD..remotes/%s" (magit-get-svn-branch-name))))
 
 (defun magit-insert-unpushed-svn-commits ()
   (magit-git-section 'svn-unpushed
 		     "Unpushed commits (SVN):" 'magit-wash-log
 		     "log" "--pretty=format:* %H %s"
-		     (format "remotes/trunk..HEAD")))
+		     (format "remotes/%s..HEAD" (magit-get-svn-branch-name))))
 
 ;;; Status
 
@@ -2005,8 +2007,12 @@ in log buffer."
   (magit-run-git-async "svn" "dcommit"))
 
 (defun magit-svn-enabled ()
-  (not (null (find "trunk" (magit-list-interesting-revisions)
-		   :test 'equal))))
+   (not (null (magit-get-svn-branch-name))))
+
+(defun magit-get-svn-branch-name ()
+  (let ((interesting-revisions (magit-list-interesting-revisions)))
+    (or (find "git-svn" interesting-revisions :test 'equal)
+	(find "trunk" interesting-revisions :test 'equal))))
 
 ;;; Resetting
 
@@ -2347,18 +2353,7 @@ Prefix arg means justify as well."
 (defun magit-log-edit-cancel-log-message ()
   (interactive)
   (when (or (not magit-log-edit-confirm-cancellation)
-	    (yes-or-no-p 
-	     "Really cancel editing the log (any changes will be lost)?"))
-    (erase-buffer)
-    (bury-buffer)
-    (when magit-pre-log-edit-window-configuration
-      (set-window-configuration magit-pre-log-edit-window-configuration)
-      (setq magit-pre-log-edit-window-configuration nil))))
-
-(defun magit-log-edit-cancel-log-message ()
-  (interactive)
-  (when (or (not magit-log-edit-confirm-cancellation)
-	    (yes-or-no-p 
+	    (yes-or-no-p
 	     "Really cancel editing the log (any changes will be lost)?"))
     (erase-buffer)
     (bury-buffer)
@@ -2582,7 +2577,7 @@ Prefix arg means justify as well."
 	    (t
 	     (magit-log-edit-append
 	      (magit-format-commit commit "%s%n%n%b"))
-	     (magit-log-edit-set-field 
+	     (magit-log-edit-set-field
 	      'author
 	      (magit-format-commit commit "%an <%ae>, %ai")))))
     success))
@@ -2632,6 +2627,10 @@ Prefix arg means justify as well."
 
 (defvar magit-have-graph 'unset)
 (defvar magit-have-decorate 'unset)
+(make-variable-buffer-local 'magit-have-graph)
+(put 'magit-have-graph 'permanent-local t)
+(make-variable-buffer-local 'magit-have-decorate)
+(put 'magit-have-decorate 'permanent-local t)
 
 (defun magit-configure-have-graph ()
   (if (eq magit-have-graph 'unset)
@@ -2697,7 +2696,7 @@ Prefix arg means justify as well."
       (let* ((topdir (magit-get-top-dir default-directory))
 	     (args (magit-rev-to-git head)))
 	(switch-to-buffer "*magit-reflog*")
-	(magit-mode-init topdir 'reflog 
+	(magit-mode-init topdir 'reflog
 			 #'magit-refresh-reflog-buffer head args))))
 
 (defun magit-reflog-head ()
@@ -2735,12 +2734,19 @@ Prefix arg means justify as well."
 
 ;;; Wazzup
 
-(defun magit-wazzup-ignore (branch edit)
+(defun magit-wazzup-toggle-ignore (branch edit)
   (let ((ignore-file ".git/info/wazzup-exclude"))
     (if edit
 	(setq branch (read-string "Branch to ignore for wazzup: " branch)))
-    (append-to-file (concat branch "\n") nil ignore-file)
-    (magit-need-refresh)))
+    (let ((ignored (magit-file-lines ignore-file)))
+      (cond ((member branch ignored)
+	     (when (or (not edit)
+		       (y-or-n-p "Branch %s is already ignored. Unignore?"))
+	       (setq ignored (delete branch ignored))))
+	    (t
+	     (setq ignored (append ignored (list branch)))))
+      (magit-write-file-lines ignore-file ignored)
+      (magit-need-refresh))))
 
 (defun magit-refresh-wazzup-buffer (head all)
   (magit-create-buffer-sections
@@ -2764,7 +2770,7 @@ Prefix arg means justify as well."
 					  head b))
 		     (section
 		      (let ((magit-section-hidden-default t))
-			(magit-git-section 
+			(magit-git-section
 			 (cons b 'wazzup)
 			 (format "%s unmerged commits in %s%s"
 				 n b
@@ -2783,7 +2789,7 @@ Prefix arg means justify as well."
   (interactive "P")
   (let* ((topdir (magit-get-top-dir default-directory)))
     (switch-to-buffer "*magit-wazzup*")
-    (magit-mode-init topdir 'wazzup 
+    (magit-mode-init topdir 'wazzup
 		     #'magit-refresh-wazzup-buffer
 		     (magit-get-current-branch) all)))
 
@@ -2802,7 +2808,7 @@ Prefix arg means justify as well."
     ((untracked file)
      (magit-ignore-file info current-prefix-arg nil))
     ((wazzup)
-     (magit-wazzup-ignore info current-prefix-arg))))
+     (magit-wazzup-toggle-ignore info current-prefix-arg))))
 
 (defun magit-ignore-item-locally ()
   (interactive)
@@ -2956,5 +2962,59 @@ Prefix arg means justify as well."
     (switch-to-buffer-other-window "*magit-branches*")
     (erase-buffer)
     (shell-command (concat magit-git-executable " branch -va") t t)))
+
+(defvar magit-ediff-file)
+(defvar magit-ediff-windows)
+
+(defun magit-interactive-resolve (file)
+  (let ((merge-status (magit-git-string "ls-files -u -- %s" file))
+	(base-buffer (generate-new-buffer (concat file ".base")))
+	(our-buffer (generate-new-buffer (concat file ".current")))
+	(their-buffer (generate-new-buffer (concat file ".merged")))
+	(windows (current-window-configuration)))
+    (if (null merge-status)
+	(error "Cannot resolge %s" file))
+    (with-current-buffer base-buffer
+      (if (string-match "^[0-9]+ [0-9a-f]+ 1" merge-status)
+	  (insert (magit-git-string "cat-file blob :1:%s" file))))
+    (with-current-buffer our-buffer
+      (if (string-match "^[0-9]+ [0-9a-f]+ 2" merge-status)
+	  (insert (magit-git-string "cat-file blob :2:%s" file))))
+    (with-current-buffer their-buffer
+      (if (string-match "^[0-9]+ [0-9a-f]+ 3" merge-status)
+	  (insert (magit-git-string "cat-file blob :3:%s" file))))
+    ;; We have now created the 3 buffer with ours, theirs and the ancestor files
+    (with-current-buffer (ediff-merge-buffers-with-ancestor our-buffer their-buffer base-buffer)
+      (make-local-variable 'magit-ediff-file)
+      (setq magit-ediff-file file)
+      (make-local-variable 'magit-ediff-windows)
+      (setq magit-ediff-windows windows)
+      (make-local-variable 'ediff-quit-hook)
+      (add-hook 'ediff-quit-hook
+		(lambda ()
+		  (let ((buffer-A ediff-buffer-A)
+			(buffer-B ediff-buffer-B)
+			(buffer-C ediff-buffer-C)
+			(buffer-Ancestor ediff-ancestor-buffer)
+			(file magit-ediff-file)
+			(windows magit-ediff-windows))
+		    (ediff-cleanup-mess)
+		    (find-file file)
+		    (erase-buffer)
+		    (insert-buffer-substring buffer-C)
+		    (kill-buffer buffer-A)
+		    (kill-buffer buffer-B)
+		    (kill-buffer buffer-C)
+		    (when (bufferp buffer-Ancestor) (kill-buffer buffer-Ancestor))
+		    (set-window-configuration windows)
+		    (message "Conflict resolution finished; you may save the buffer")))))))
+
+
+(defun magit-interactive-resolve-item ()
+  (interactive)
+  (magit-section-action (item info "resolv")
+    ((diff)
+     (magit-interactive-resolve (cadr info)))))
+
 
 (provide 'magit)
