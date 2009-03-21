@@ -1853,6 +1853,7 @@ in log buffer."
       (let ((default-directory dir))
 	(magit-run* (list "git" "init"))))))
 
+;;;###autoload
 (defun magit-status (dir)
   (interactive (list (or (and (not current-prefix-arg)
 			      (magit-get-top-dir default-directory))
@@ -2168,6 +2169,15 @@ in log buffer."
       (magit-run* (list magit-topgit-executable "update")
 		  nil nil nil t)
     (magit-run-git-async "pull" "-v")))
+
+(defun magit-shell-command (command)
+  (interactive "sCommand: ")
+  (require 'pcomplete)
+  (let ((args (car (with-temp-buffer
+		     (insert command)
+		     (pcomplete-parse-buffer-arguments))))
+	(magit-process-popup-time 0))
+    (magit-run* args nil nil nil t)))
 
 (defun magit-shell-command (command)
   (interactive "sCommand: ")
