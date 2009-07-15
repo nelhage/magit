@@ -63,11 +63,6 @@
   :group 'magit
   :type 'string)
 
-(defcustom magit-topgit-executable "tg"
-  "The name of the TopGit executable."
-  :group 'magit
-  :type 'string)
-
 (defcustom magit-git-standard-options '("--no-pager")
   "Standard options when running Git."
   :group 'magit
@@ -2035,12 +2030,9 @@ in log buffer."
   (interactive (magit-read-create-branch-args))
   (if (and branch (not (string= branch ""))
 	   parent)
-      (if (file-exists-p ".topdeps")
-	  (magit-run* (list magit-topgit-executable "create"
-			    branch (magit-rev-to-git parent))
-		      nil nil nil t)
-	(magit-run-git "checkout" "-b"
-		       branch (magit-rev-to-git parent)))))
+      (magit-run-git "checkout" "-b"
+		     branch
+		     (magit-rev-to-git parent))))
 
 ;;; Merging
 
@@ -3001,11 +2993,7 @@ Prefix arg means justify as well."
      (error "Can't discard this diff"))
     ((stash)
      (when (yes-or-no-p "Discard stash? ")
-       (magit-run-git "stash" "drop" info)))
-    ((topic)
-     (when (yes-or-no-p "Discard topic? ")
-       (magit-run* (list magit-topgit-executable "delete" "-f" info)
-		   nil nil nil t)))))
+       (magit-run-git "stash" "drop" info)))))
 
 (defun magit-visit-item ()
   (interactive)
