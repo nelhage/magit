@@ -250,7 +250,7 @@ Many Magit faces inherit from this one by default."
   (magit-shell (magit-format-git-command fmt args)))
 
 (defun magit-git-exit-code (fmt &rest args)
-  (call-process shell-file-name nil nil nil
+  (process-file shell-file-name nil nil nil
 		shell-command-switch
 		(magit-format-git-command fmt args)))
 
@@ -1001,7 +1001,7 @@ Many Magit faces inherit from this one by default."
 	       (magit-need-refresh magit-process-client-buffer))
 	      (t
 	       (setq successp
-		     (equal (apply 'call-process cmd nil buf nil args) 0))
+		     (equal (apply 'process-file cmd nil buf nil args) 0))
 	       (magit-set-mode-line-process nil)
 	       (magit-need-refresh magit-process-client-buffer))))
       (or successp
