@@ -286,14 +286,15 @@ Many Magit faces inherit from this one by default."
     (magit-git-string "config --unset %s" (magit-concat-with-delim "." keys))))
 
 (defun magit-get-top-dir (cwd)
-  (let ((cwd (expand-file-name cwd)))
-    (and (file-directory-p cwd)
-	 (let* ((default-directory cwd)
-		(magit-dir
-		 (magit-git-string "rev-parse --git-dir 2>/dev/null")))
-	   (and magit-dir
-		(file-name-as-directory
-		 (or (file-name-directory magit-dir) cwd)))))))
+  (or (and (file-directory-p (concat cwd ".git")) (expand-file-name cwd))
+      (let* ((default-directory cwd)
+             (dir (file-name-directory
+                   (expand-file-name
+                    (magit-git-string "rev-parse --git-dir 2>/dev/null")))))
+        (if (tramp-tramp-file-p cwd)
+            (with-parsed-tramp-file-name cwd tr
+              (concat (substring cwd 0 (* -1 (length tr-localname))) dir))
+          dir))))
 
 (defun magit-get-ref (ref)
   (magit-git-string "symbolic-ref -q %s" ref))
@@ -1315,12 +1316,11 @@ Please see the manual for a complete description of Magit.
 (defun magit-find-buffer (submode &optional dir)
   (let ((topdir (magit-get-top-dir (or dir default-directory))))
     (dolist (buf (buffer-list))
-      (if (save-excursion
-	    (set-buffer buf)
+      (if (with-current-buffer buf
 	    (and default-directory
-		 (equal (expand-file-name default-directory) topdir)
-		 (eq major-mode 'magit-mode)
-		 (eq magit-submode submode)))
+             (eq major-mode 'magit-mode)
+             (eq magit-submode submode)
+             (equal (expand-file-name default-directory) topdir)))
 	  (return buf)))))
 
 (defun magit-find-status-buffer (&optional dir)
