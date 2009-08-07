@@ -291,7 +291,7 @@ Many Magit faces inherit from this one by default."
              (dir (file-name-directory
                    (expand-file-name
                     (magit-git-string "rev-parse --git-dir 2>/dev/null")))))
-        (if (tramp-tramp-file-p cwd)
+        (if (and (fboundp 'tramp-tramp-file-p) (tramp-tramp-file-p cwd))
             (with-parsed-tramp-file-name cwd tr
               (concat (substring cwd 0 (* -1 (length tr-localname))) dir))
           dir))))
