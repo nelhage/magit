@@ -1899,7 +1899,7 @@ in log buffer."
 	(magit-insert-topics)
 	(magit-insert-pending-changes)
 	(magit-insert-pending-commits)
-	(when remote
+	(when (and remote (magit-ref-exists-p (format "refs/remotes/%s/%s" remote branch)))
 	  (magit-insert-unpulled-commits remote branch))
         (when svn-enabled
           (magit-insert-unpulled-svn-commits))
@@ -1908,7 +1908,7 @@ in log buffer."
 	   (if staged "Unstaged changes:" "Changes:"))
 	  (if staged
 	      (magit-insert-staged-changes no-commit)))
-	(when remote
+	(when (and remote (magit-ref-exists-p (format "refs/remotes/%s/%s" remote branch)))
 	  (magit-insert-unpushed-commits remote branch))
         (when svn-enabled
           (magit-insert-unpushed-svn-commits))))))
