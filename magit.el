@@ -1360,7 +1360,7 @@ Please see the manual for a complete description of Magit.
 	(magit-highlight-section)))))
 
 (defun magit-revert-buffers ()
-  (dolist (buffer (buffer-list))
+  (dolist (buffer magit-refresh-needing-buffers)
     (when (and buffer
 	       (not (verify-visited-file-modtime buffer))
 	       (not (buffer-modified-p buffer)))
