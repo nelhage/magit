@@ -2286,8 +2286,8 @@ in log buffer."
 		   (magit-git-lines "remote")
 		   nil nil nil nil def))
 
-(defun magit-push ()
-  (interactive)
+(defun magit-push (force)
+  (interactive "P")
   (let* ((branch (or (magit-get-current-branch)
 		     (error "Don't push a detached head. That's gross.")))
 	 (branch-remote (magit-get "branch" branch "remote"))
@@ -2299,7 +2299,7 @@ in log buffer."
     (if (and (not branch-remote)
 	     (not current-prefix-arg))
 	(magit-set push-remote "branch" branch "remote"))
-    (magit-run-git-async "push" "-v" push-remote branch)))
+    (apply #'magit-run-git-async "push" "-v" push-remote branch (if force '("-f") '()))))
 
 ;;; Log edit mode
 
