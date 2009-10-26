@@ -2018,7 +2018,7 @@ in log buffer."
   (interactive (list (magit-read-rev "Switch to" (magit-default-rev))))
   (if rev
       (if (not (magit-maybe-create-local-tracking-branch rev))
-	  (magit-run-git "checkout" (magit-rev-to-git rev)))))
+	  (magit-run-git-async "checkout" (magit-rev-to-git rev)))))
 
 (defun magit-read-create-branch-args ()
   (let* ((cur-branch (magit-get-current-branch))
