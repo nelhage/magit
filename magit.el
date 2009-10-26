@@ -1418,7 +1418,7 @@ Please see the manual for a complete description of Magit.
 (defun magit-insert-untracked-files ()
   (magit-git-section 'untracked "Untracked files:"
 		     'magit-wash-untracked-files
-		     "ls-files" "-t" "--others" "--exclude-standard"))
+		     "ls-files" "-t" "--directory" "--others" "--exclude-standard"))
 
 ;;; Diffs and Hunks
 
