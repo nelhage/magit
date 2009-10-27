@@ -648,14 +648,7 @@ Many Magit faces inherit from this one by default."
 	(progn
 	  (goto-char (magit-section-beginning next))
 	  (if (memq magit-submode '(log reflog))
-	      (magit-show-commit next))
-	  (if (not (magit-section-hidden next))
-	      (let ((offset (- (line-number-at-pos
-				(magit-section-beginning next))
-			       (line-number-at-pos
-				(magit-section-end next)))))
-		(if (< offset (window-height))
-		    (recenter offset)))))
+	      (magit-show-commit next)))
       (message "No next section"))))
 
 (defun magit-prev-section (section)
